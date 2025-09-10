@@ -170,6 +170,7 @@ struct flb_cloudwatch {
     const char *external_id;
     const char *profile;
     const char *log_group_class;
+    const char *kms_key_id;
     int log_group_class_type;
     int custom_endpoint;
     /* Should the plugin create the log group */

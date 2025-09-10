@@ -84,6 +84,13 @@ static struct flb_aws_header create_stream_header = {
     .val_len = 29,
 };
 
+static struct flb_aws_header associate_kms_key_header = {
+    .key = "X-Amz-Target",
+    .key_len = 12,
+    .val = "Logs_20140328.AssociateKmsKey",
+    .val_len = 29,
+};
+
 static struct flb_aws_header put_log_events_header[] = {
     {
         .key = "X-Amz-Target",
@@ -1772,6 +1779,67 @@ static int set_log_group_retention(struct flb_cloudwatch *ctx, struct log_stream
     return -1;
 }
 
+int associate_kms_key(struct flb_cloudwatch *ctx, struct log_stream *stream)
+{
+    struct flb_http_client *c = NULL;
+    struct flb_aws_client *cw_client;
+    flb_sds_t body;
+    flb_sds_t tmp;
+
+    if (!ctx->kms_key_id) {
+        return 0;
+    }
+
+    flb_plg_info(ctx->ins, "Associating KMS key %s with log group %s", ctx->kms_key_id, stream->group);
+
+    body = flb_sds_create_size(50 + strlen(stream->group) + strlen(ctx->kms_key_id));
+    if (!body) {
+        flb_errno();
+        return -1;
+    }
+
+    tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\",\"kmsKeyId\":\"%s\"}", stream->group, ctx->kms_key_id);
+    if (!tmp) {
+        flb_sds_destroy(body);
+        flb_errno();
+        return -1;
+    }
+    body = tmp;
+
+    if (plugin_under_test() == FLB_TRUE) {
+        c = mock_http_call("TEST_ASSOCIATE_KMS_KEY_ERROR", "AssociateKmsKey");
+    }
+    else {
+        cw_client = ctx->cw_client;
+        c = cw_client->client_vtable->request(cw_client, FLB_HTTP_POST,
+                                              "/", body, strlen(body),
+                                              &associate_kms_key_header, 1);
+    }
+
+    if (c) {
+        flb_plg_debug(ctx->ins, "AssociateKmsKey http status=%d", c->resp.status);
+
+        if (c->resp.status == 200) {
+            flb_plg_info(ctx->ins, "Associated KMS key with log group %s", stream->group);
+            flb_sds_destroy(body);
+            flb_http_client_destroy(c);
+            return 0;
+        }
+
+        if (c->resp.payload_size > 0) {
+            flb_aws_print_error(c->resp.payload, c->resp.payload_size,
+                               "AssociateKmsKey", ctx->ins);
+        }
+    }
+
+    flb_plg_warn(ctx->ins, "Failed to associate KMS key with existing log group %s", stream->group);
+    if (c) {
+        flb_http_client_destroy(c);
+    }
+    flb_sds_destroy(body);
+    return -1;
+}
+
 int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
 {
     struct flb_http_client *c = NULL;
@@ -1784,31 +1852,31 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
     flb_plg_info(ctx->ins, "Creating log group %s", stream->group);
 
     /* construct CreateLogGroup request body */
-    if (ctx->log_group_class_type == LOG_CLASS_DEFAULT_TYPE) {
-        body = flb_sds_create_size(30 + strlen(stream->group));
-        if (!body) {
-            flb_sds_destroy(body);
-            flb_errno();
-            return -1;
-        }
+    size_t body_size = 30 + strlen(stream->group);
+    if (ctx->log_group_class_type != LOG_CLASS_DEFAULT_TYPE) {
+        body_size += 20 + strlen(ctx->log_group_class);
+    }
+    if (ctx->kms_key_id) {
+        body_size += 20 + strlen(ctx->kms_key_id);
+    }
+    
+    body = flb_sds_create_size(body_size);
+    if (!body) {
+        flb_sds_destroy(body);
+        flb_errno();
+        return -1;
+    }
 
-        tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\"}", stream->group);
-        if (!tmp) {
-            flb_sds_destroy(body);
-            flb_errno();
-            return -1;
-        }
-        body = tmp;
-    } else {
-        body = flb_sds_create_size(37 + strlen(stream->group) + strlen(ctx->log_group_class));
-        if (!body) {
-            flb_sds_destroy(body);
-            flb_errno();
-            return -1;
-        }
-
-        tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\", \"logGroupClass\":\"%s\"}",
-                             stream->group, ctx->log_group_class);
+    tmp = flb_sds_printf(&body, "{\"logGroupName\":\"%s\"", stream->group);
+    if (!tmp) {
+        flb_sds_destroy(body);
+        flb_errno();
+        return -1;
+    }
+    body = tmp;
+    
+    if (ctx->log_group_class_type != LOG_CLASS_DEFAULT_TYPE) {
+        tmp = flb_sds_printf(&body, ",\"logGroupClass\":\"%s\"", ctx->log_group_class);
         if (!tmp) {
             flb_sds_destroy(body);
             flb_errno();
@@ -1816,6 +1884,24 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
         }
         body = tmp;
     }
+    
+    if (ctx->kms_key_id) {
+        tmp = flb_sds_printf(&body, ",\"kmsKeyId\":\"%s\"", ctx->kms_key_id);
+        if (!tmp) {
+            flb_sds_destroy(body);
+            flb_errno();
+            return -1;
+        }
+        body = tmp;
+    }
+    
+    tmp = flb_sds_cat(body, "}", 1);
+    if (!tmp) {
+        flb_sds_destroy(body);
+        flb_errno();
+        return -1;
+    }
+    body = tmp;
 
     if (plugin_under_test() == FLB_TRUE) {
         c = mock_http_call("TEST_CREATE_LOG_GROUP_ERROR", "CreateLogGroup");
@@ -1858,6 +1944,7 @@ int create_log_group(struct flb_cloudwatch *ctx, struct log_stream *stream)
                     flb_sds_destroy(body);
                     flb_sds_destroy(error);
                     flb_http_client_destroy(c);
+                    associate_kms_key(ctx, stream);
                     ret = set_log_group_retention(ctx, stream);
                     return ret;
                 }
@@ -1947,6 +2034,7 @@ int create_log_stream(struct flb_cloudwatch *ctx, struct log_stream *stream,
                     flb_sds_destroy(body);
                     flb_sds_destroy(error);
                     flb_http_client_destroy(c);
+                    associate_kms_key(ctx, stream);
                     return 0;
                 }
 

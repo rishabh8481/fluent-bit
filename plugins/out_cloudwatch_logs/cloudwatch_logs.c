@@ -117,6 +117,11 @@ static int cb_cloudwatch_init(struct flb_output_instance *ins,
         goto error;
     }
 
+    tmp = flb_output_get_property("kms_key_id", ins);
+    if (tmp) {
+        ctx->kms_key_id = tmp;
+    }
+
     tmp = flb_output_get_property("log_stream_name", ins);
     if (tmp) {
         ctx->log_stream_name = tmp;
@@ -721,6 +726,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "log_group_class", "",
      0, FLB_TRUE, offsetof(struct flb_cloudwatch, log_group_class),
      "Specify the log storage class. Valid values are STANDARD (default) and INFREQUENT_ACCESS."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "kms_key_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, kms_key_id),
+     "KMS key ID or ARN to encrypt the log group with"
     },
 
     {
