@@ -283,7 +283,8 @@ struct flb_opensearch *flb_os_conf_create(struct flb_output_instance *ins,
                                                                    ctx->aws_sts_endpoint,
                                                                    NULL,
                                                                    flb_aws_client_generator(),
-                                                                   ctx->aws_profile);
+                                                                   ctx->aws_profile,
+                                                                   ctx->aws_credentials_uri);
             if (!ctx->aws_provider) {
                 flb_error("[out_es] Failed to create AWS Credential Provider");
                 flb_os_conf_destroy(ctx);

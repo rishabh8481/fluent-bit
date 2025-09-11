@@ -91,6 +91,7 @@ struct flb_firehose {
     char *sts_endpoint;
     uint16_t port;
     char *profile;
+    char *credentials_uri;
     int custom_endpoint;
     int retry_requests;
     int compression;

@@ -893,7 +893,8 @@ static int cb_s3_init(struct flb_output_instance *ins,
                                                        ctx->sts_endpoint,
                                                        NULL,
                                                        flb_aws_client_generator(),
-                                                       ctx->profile);
+                                                       ctx->profile,
+                                                       ctx->credentials_uri);
 
     if (!ctx->provider) {
         flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -4142,6 +4143,12 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_s3, profile),
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "credentials_uri", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, credentials_uri),
+     "Custom URI for AWS credentials endpoint."
     },
 
     {

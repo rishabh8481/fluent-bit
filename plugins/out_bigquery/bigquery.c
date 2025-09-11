@@ -709,7 +709,8 @@ static int cb_bigquery_init(struct flb_output_instance *ins,
                                                                NULL,
                                                                NULL,
                                                                flb_aws_client_generator(),
-                                                               NULL);
+                                                               NULL,
+                                                               ctx->aws_credentials_uri);
 
         if (!ctx->aws_provider) {
             flb_plg_error(ctx->ins, "Failed to create AWS Credential Provider");
@@ -1085,6 +1086,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "aws_region", (char *)NULL,
      0, FLB_TRUE, offsetof(struct flb_bigquery, aws_region),
      "Enable identity federation"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "aws_credentials_uri", (char *)NULL,
+     0, FLB_TRUE, offsetof(struct flb_bigquery, aws_credentials_uri),
+     "Custom URI for AWS credentials endpoint"
     },
     {
       FLB_CONFIG_MAP_STR, "project_number", (char *)NULL,

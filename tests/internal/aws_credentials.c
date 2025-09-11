@@ -327,6 +327,7 @@ static void test_standard_chain_provider()
                                                   "https://sts.us-west-2.amazonaws.com",
                                                   NULL,
                                                   flb_aws_client_generator(),
+                                                  NULL,
                                                   NULL);
     if (!provider) {
         flb_errno();

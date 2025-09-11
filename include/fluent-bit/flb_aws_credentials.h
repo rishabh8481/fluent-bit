@@ -163,7 +163,8 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
                                                             struct
                                                             flb_aws_client_generator
                                                             *generator,
-                                                            char *profile);
+                                                            char *profile,
+                                                            char *credentials_uri);
 
 /* Provide base configuration options for managed chain */
 #define FLB_AWS_CREDENTIAL_BASE_CONFIG_MAP(prefix)                                    \
@@ -193,6 +194,11 @@ struct flb_aws_provider *flb_standard_chain_provider_create(struct flb_config
      0, FLB_FALSE, 0,                                                                 \
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually"  \
      "stored in $HOME/.aws/ directory."                                               \
+    },                                                                                \
+    {                                                                                 \
+     FLB_CONFIG_MAP_STR, prefix "credentials_uri", NULL,                              \
+     0, FLB_FALSE, 0,                                                                 \
+     "HTTP URI to retrieve AWS credentials from a custom endpoint"                    \
     }
 /*
  * Managed chain provider; Creates and manages removal of dependancies for an instance
@@ -287,6 +293,16 @@ struct flb_aws_provider *flb_ec2_provider_create(struct flb_config *config,
  * New AWS Profile provider, reads from the shared credentials file
  */
 struct flb_aws_provider *flb_profile_provider_create(char* profile);
+
+/*
+ * URI Provider - retrieve credentials from a configurable HTTP URI
+ * Used for custom credential endpoints provided by external services
+ */
+struct flb_aws_provider *flb_uri_provider_create(struct flb_config *config,
+                                                 char *uri,
+                                                 struct
+                                                 flb_aws_client_generator
+                                                 *generator);
 
 /*
  * Helper functions

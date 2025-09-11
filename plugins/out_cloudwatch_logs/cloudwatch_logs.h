@@ -169,6 +169,7 @@ struct flb_cloudwatch {
     const char *extra_user_agent;
     const char *external_id;
     const char *profile;
+    const char *credentials_uri;
     const char *log_group_class;
     int log_group_class_type;
     int custom_endpoint;

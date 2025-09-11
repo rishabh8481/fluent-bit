@@ -96,6 +96,7 @@ struct flb_kinesis {
     int custom_endpoint;
     uint16_t port;
     char *profile;
+    char *credentials_uri;
 
     /* in this plugin the 'random' partition key is a uuid + fluent tag + timestamp */
     char *uuid;

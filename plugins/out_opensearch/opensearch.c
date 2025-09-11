@@ -1120,6 +1120,11 @@ static struct flb_config_map config_map[] = {
      "Custom endpoint for the AWS STS API, used with the AWS_Role_ARN option"
     },
     {
+     FLB_CONFIG_MAP_STR, "aws_credentials_uri", NULL,
+     0, FLB_TRUE, offsetof(struct flb_opensearch, aws_credentials_uri),
+     "Custom URI for AWS credentials endpoint"
+    },
+    {
      FLB_CONFIG_MAP_STR, "aws_role_arn", NULL,
      0, FLB_FALSE, 0,
      "AWS IAM Role to assume to put records to your Amazon OpenSearch cluster"

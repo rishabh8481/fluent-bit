@@ -85,6 +85,7 @@ struct flb_bigquery {
     /* AWS IMDS */
     struct flb_tls *aws_tls;
     struct flb_aws_provider *aws_provider;
+    flb_sds_t aws_credentials_uri;
 
     /* AWS STS */
     flb_sds_t aws_sts_endpoint;
