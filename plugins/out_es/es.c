@@ -1182,6 +1182,11 @@ static struct flb_config_map config_map[] = {
      "AWS Profile name. AWS Profiles can be configured with AWS CLI and are usually stored in "
      "$HOME/.aws/ directory."
     },
+    {
+     FLB_CONFIG_MAP_STR, "aws_credentials_uri", NULL,
+     0, FLB_TRUE, offsetof(struct flb_elasticsearch, aws_credentials_uri),
+     "Custom URI for AWS credentials endpoint"
+    },
 #endif
 
     /* Logstash compatibility */

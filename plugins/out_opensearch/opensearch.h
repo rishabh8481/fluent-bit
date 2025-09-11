@@ -73,6 +73,7 @@ struct flb_opensearch {
     char *aws_region;
     char *aws_sts_endpoint;
     char *aws_profile;
+    char *aws_credentials_uri;
     struct flb_aws_provider *aws_provider;
     struct flb_aws_provider *base_aws_provider;
     /* tls instances can't be re-used; aws provider requires a separate one */

@@ -221,7 +221,7 @@ static flb_sds_t build_msk_iam_payload(struct flb_aws_msk_iam *config,
     temp_provider = flb_standard_chain_provider_create(config->flb_config, NULL,
                                                       config->region, NULL, NULL,
                                                       flb_aws_client_generator(),
-                                                      NULL);
+                                                      NULL, NULL);
     if (!temp_provider) {
         flb_error("[aws_msk_iam] build_msk_iam_payload: failed to create AWS credentials provider");
         return NULL;
@@ -676,7 +676,7 @@ static void oauthbearer_token_refresh_cb(rd_kafka_t *rk,
     temp_provider = flb_standard_chain_provider_create(config->flb_config, NULL,
                                                       config->region, NULL, NULL,
                                                       flb_aws_client_generator(),
-                                                      NULL);
+                                                      NULL, NULL);
     if (temp_provider) {
         if (temp_provider->provider_vtable->init(temp_provider) == 0) {
             creds = temp_provider->provider_vtable->get_credentials(temp_provider);

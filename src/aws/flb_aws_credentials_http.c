@@ -85,8 +85,7 @@ struct flb_aws_credentials *get_credentials_fn_http(struct flb_aws_provider
     int refresh = FLB_FALSE;
     struct flb_aws_provider_http *implementation = provider->implementation;
 
-    flb_debug("[aws_credentials] Retrieving credentials from the "
-              "HTTP provider..");
+
 
     /* a negative next_refresh means that auto-refresh is disabled */
     if (implementation->next_refresh > 0
@@ -155,7 +154,7 @@ error:
 int refresh_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
     int ret = -1;
-    flb_debug("[aws_credentials] Refresh called on the http provider");
+
 
     if (try_lock_provider(provider)) {
         ret = http_credentials_request(implementation);
@@ -167,7 +166,7 @@ int refresh_fn_http(struct flb_aws_provider *provider) {
 int init_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
     int ret = -1;
-    flb_debug("[aws_credentials] Init called on the http provider");
+
 
     implementation->client->debug_only = FLB_TRUE;
 
@@ -184,7 +183,7 @@ int init_fn_http(struct flb_aws_provider *provider) {
 void sync_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
-    flb_debug("[aws_credentials] Sync called on the http provider");
+
     /* remove async flag */
     flb_stream_disable_async_mode(&implementation->client->upstream->base);
 }
@@ -192,7 +191,7 @@ void sync_fn_http(struct flb_aws_provider *provider) {
 void async_fn_http(struct flb_aws_provider *provider) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
-    flb_debug("[aws_credentials] Async called on the http provider");
+
     /* add async flag */
     flb_stream_enable_async_mode(&implementation->client->upstream->base);
 }
@@ -201,7 +200,7 @@ void upstream_set_fn_http(struct flb_aws_provider *provider,
                           struct flb_output_instance *ins) {
     struct flb_aws_provider_http *implementation = provider->implementation;
 
-    flb_debug("[aws_credentials] upstream_set called on the http provider");
+
     /* Make sure TLS is set to false before setting upstream, then reset it */
     ins->use_tls = FLB_FALSE;
     flb_output_upstream_set(implementation->client->upstream, ins);
@@ -259,8 +258,7 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
     struct flb_upstream *upstream = NULL;
     int io_flags = insecure == FLB_TRUE ? FLB_IO_TCP : FLB_IO_TLS;
 
-    flb_debug("[aws_credentials] Configuring HTTP provider with %s:80%s",
-              host, path);
+
 
     provider = flb_calloc(1, sizeof(struct flb_aws_provider));
     if (!provider) {
@@ -369,8 +367,7 @@ struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
         }
     }
     else {
-        flb_debug("[aws_credentials] Not initializing ECS/EKS HTTP Provider because"
-                  " %s and %s is not set", AWS_CREDENTIALS_RELATIVE_URI, AWS_CREDENTIALS_FULL_URI);
+
         return NULL;
     }
 
@@ -419,6 +416,8 @@ static int http_credentials_request(struct flb_aws_provider_http
     char *auth_token = NULL;
     size_t auth_token_size = 0;
     char *auth_token_path = NULL;
+    
+
 
     auth_token_path = getenv(AUTH_TOKEN_FILE_ENV_VAR);
     tmp = getenv(AUTH_TOKEN_ENV_VAR);
@@ -432,7 +431,7 @@ static int http_credentials_request(struct flb_aws_provider_http
     }
 
     if (auth_token_path != NULL && strlen(auth_token_path) > 0) {
-        flb_debug("[aws] reading authorization token from %s", auth_token_path);
+
 
         if (auth_token) {
             flb_free(auth_token);
@@ -448,6 +447,8 @@ static int http_credentials_request(struct flb_aws_provider_http
         }
     }
 
+
+    
     if (auth_token != NULL && strlen(auth_token) > 0) {
         trim_newline(auth_token);
         c = flb_aws_client_request_basic_auth(client, FLB_HTTP_GET, implementation->path,
@@ -459,6 +460,8 @@ static int http_credentials_request(struct flb_aws_provider_http
                                            implementation->path, NULL, 0,
                                            NULL, 0);
     }
+    
+
 
     if (auth_token) {
         flb_free(auth_token);
@@ -466,7 +469,7 @@ static int http_credentials_request(struct flb_aws_provider_http
     }
 
     if (!c || c->resp.status != 200) {
-        flb_debug("[aws_credentials] http credentials request failed");
+        flb_error("[aws_credentials] HTTP credentials request failed. Status: %d", c ? c->resp.status : -1);
         if (c) {
             if (c->resp.payload_size > 0) {
                 flb_aws_print_error_code(c->resp.payload, c->resp.payload_size,
@@ -483,6 +486,10 @@ static int http_credentials_request(struct flb_aws_provider_http
 
     response = c->resp.payload;
     response_len = c->resp.payload_size;
+
+    if (response_len == 0) {
+        flb_error("[aws_credentials] HTTP response payload is empty - credential server returned no data");
+    }
 
     creds = flb_parse_http_credentials(response, response_len, &expiration);
     if (!creds) {
@@ -556,8 +563,12 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
         goto error;
     }
 
+
+    
     ret = jsmn_parse(&parser, response, response_len,
                      tokens, tokens_size);
+
+
 
     if (ret == JSMN_ERROR_INVAL || ret == JSMN_ERROR_PART) {
         flb_error("[aws_credentials] Could not parse credentials response"
@@ -670,6 +681,8 @@ struct flb_aws_credentials *flb_parse_json_credentials(char *response,
 
         i++;
     }
+
+
 
     if (creds->access_key_id == NULL) {
         flb_error("[aws_credentials] Missing %s field in"
