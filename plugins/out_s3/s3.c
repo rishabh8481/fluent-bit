@@ -138,6 +138,20 @@ static struct flb_aws_header storage_class_header = {
     .val_len = 0,
 };
 
+static struct flb_aws_header sse_header = {
+    .key = "x-amz-server-side-encryption",
+    .key_len = 28,
+    .val = "",
+    .val_len = 0,
+};
+
+static struct flb_aws_header sse_kms_id_header = {
+    .key = "x-amz-server-side-encryption-aws-kms-key-id",
+    .key_len = 43,
+    .val = "",
+    .val_len = 0,
+};
+
 static char *mock_error_response(char *error_env_var)
 {
     char *err_val = NULL;
@@ -194,6 +208,12 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
     if (ctx->storage_class != NULL) {
         headers_len++;
     }
+    if (ctx->sse != NULL && strlen(ctx->sse) > 0) {
+        headers_len++;
+    }
+    if (ctx->sse_kms_id != NULL && strlen(ctx->sse_kms_id) > 0) {
+        headers_len++;
+    }
     if (headers_len == 0) {
         *num_headers = headers_len;
         *headers = s3_headers;
@@ -233,6 +253,18 @@ int create_headers(struct flb_s3 *ctx, char *body_md5,
         s3_headers[n] = content_md5_header;
         s3_headers[n].val = body_md5;
         s3_headers[n].val_len = strlen(body_md5);
+        n++;
+    }
+    if (ctx->sse_kms_id && strlen(ctx->sse_kms_id) > 0) {
+        s3_headers[n] = sse_kms_id_header;
+        s3_headers[n].val = ctx->sse_kms_id;
+        s3_headers[n].val_len = strlen(ctx->sse_kms_id);
+        n++;
+    }
+    if (ctx->sse && strlen(ctx->sse) > 0) {
+        s3_headers[n] = sse_header;
+        s3_headers[n].val = ctx->sse;
+        s3_headers[n].val_len = strlen(ctx->sse);
         n++;
     }
     if (ctx->storage_class != NULL) {
@@ -839,6 +871,16 @@ static int cb_s3_init(struct flb_output_instance *ins,
             flb_plg_error(ctx->ins,  "Could not construct S3 endpoint");
             return -1;
         }
+    }
+
+    tmp = flb_output_get_property("sse_kms_id", ins);
+    if (tmp) {
+        ctx->sse_kms_id = tmp;
+    }
+
+    tmp = flb_output_get_property("sse", ins);
+    if (tmp) {
+        ctx->sse = tmp;
     }
 
     tmp = flb_output_get_property("sts_endpoint", ins);
@@ -4086,6 +4128,18 @@ static struct flb_config_map config_map[] = {
      "Instead, it enables an immediate retry with no delay for networking "
      "errors, which may help improve throughput when there are transient/random "
      "networking issues."
+    },
+    
+    {
+     FLB_CONFIG_MAP_STR, "sse", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, sse),
+     "KMS Key ARN for SSE-KMS encryption (optional)"
+    },
+
+    {
+     FLB_CONFIG_MAP_STR, "sse_kms_id", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, sse_kms_id),
+     "KMS Key ARN for SSE-KMS encryption (optional)"
     },
 
     {
