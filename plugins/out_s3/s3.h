@@ -192,6 +192,9 @@ struct flb_s3 {
     int key_fmt_has_seq_index;
     flb_sds_t metadata_dir;
     flb_sds_t seq_index_file;
+    
+    /* Local file upload */
+    char *local_file_path;
 
     struct flb_output_instance *ins;
 };

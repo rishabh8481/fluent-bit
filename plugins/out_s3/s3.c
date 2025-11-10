@@ -36,6 +36,9 @@
 #include <fluent-bit/flb_input_blob.h>
 #include <stdlib.h>
 #include <sys/stat.h>
+#include <sys/mman.h>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <msgpack.h>
 
@@ -875,12 +878,17 @@ static int cb_s3_init(struct flb_output_instance *ins,
 
     tmp = flb_output_get_property("sse_kms_id", ins);
     if (tmp) {
-        ctx->sse_kms_id = tmp;
+        ctx->sse_kms_id = (char *) tmp;
     }
 
     tmp = flb_output_get_property("sse", ins);
     if (tmp) {
-        ctx->sse = tmp;
+        ctx->sse = (char *) tmp;
+    }
+
+    tmp = flb_output_get_property("local_file_path", ins);
+    if (tmp) {
+        ctx->local_file_path = (char *) tmp;
     }
 
     tmp = flb_output_get_property("sts_endpoint", ins);
@@ -1186,6 +1194,92 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
     size_t payload_size = 0;
     size_t preCompress_size = 0;
     time_t file_first_log_time = time(NULL);
+    char *local_file_buffer = NULL;
+    size_t local_file_size = 0;
+
+    // /* 
+    //  * Handle local file path mode:
+    //  * When local_file_path is set, we want to upload the file once per flush,
+    //  * not once per buffered chunk. If chunk is not NULL, it means we're being
+    //  * called from buffered chunk processing - in this case, just cleanup the
+    //  * chunk without uploading to prevent duplicates.
+    //  */
+    // if (ctx->local_file_path != NULL && chunk != NULL) {
+    //     flb_plg_debug(ctx->ins, "local_file_path mode: skipping buffered chunk upload");
+    //     s3_store_file_delete(ctx, chunk);
+    //     return FLB_OK;
+    // }
+
+    // /* Handle local file path - read file and override body/body_size */
+    // if (ctx->local_file_path != NULL) {
+    //     struct stat file_stat;
+    //     int fd;
+    //     void *mapped;
+        
+    //     /* Validate file exists and is accessible */
+    //     if (access(ctx->local_file_path, F_OK) != 0) {
+    //         flb_plg_error(ctx->ins, "Local file does not exist or is not accessible: %s (errno=%d)", 
+    //                      ctx->local_file_path, errno);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     if (access(ctx->local_file_path, R_OK) != 0) {
+    //         flb_plg_error(ctx->ins, "Local file is not readable: %s (errno=%d)", 
+    //                      ctx->local_file_path, errno);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     /* Verify it's a regular file */
+    //     if (stat(ctx->local_file_path, &file_stat) != 0) {
+    //         flb_plg_error(ctx->ins, "Failed to stat local file: %s (errno=%d)", 
+    //                      ctx->local_file_path, errno);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     if (!S_ISREG(file_stat.st_mode)) {
+    //         flb_plg_error(ctx->ins, "Local file path is not a regular file: %s", 
+    //                      ctx->local_file_path);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     /* Read file using mmap */
+    //     fd = open(ctx->local_file_path, O_RDONLY);
+    //     if (fd == -1) {
+    //         flb_plg_error(ctx->ins, "Cannot open local file: %s (errno=%d)", 
+    //                      ctx->local_file_path, errno);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     mapped = mmap(NULL, file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+    //     if (mapped == MAP_FAILED) {
+    //         close(fd);
+    //         flb_plg_error(ctx->ins, "Memory mapping failed for file: %s (errno=%d)", 
+    //                      ctx->local_file_path, errno);
+    //         return FLB_ERROR;
+    //     }
+        
+    //     /* Allocate buffer and copy file contents */
+    //     local_file_size = file_stat.st_size;
+    //     local_file_buffer = flb_malloc(local_file_size);
+    //     if (!local_file_buffer) {
+    //         munmap(mapped, file_stat.st_size);
+    //         close(fd);
+    //         flb_errno();
+    //         return FLB_ERROR;
+    //     }
+        
+    //     memcpy(local_file_buffer, mapped, local_file_size);
+        
+    //     munmap(mapped, file_stat.st_size);
+    //     close(fd);
+        
+    //     flb_plg_info(ctx->ins, "Successfully read local file: %s (%zu bytes)", 
+    //                 ctx->local_file_path, local_file_size);
+        
+    //     /* Override body and body_size with local file data */
+    //     body = local_file_buffer;
+    //     body_size = local_file_size;
+    // }
 
     /*
      * When chunk does not exist, file_first_log_time will be the current time.
@@ -1263,13 +1357,112 @@ static int upload_data(struct flb_s3 *ctx, struct s3_file *chunk,
 
 put_object:
 
+    flb_plg_info(ctx->ins, "Local File Path: %s", ctx->local_file_path);
     /*
      * remove chunk from buffer list
      */
-    ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
+    /* Handle local file path - read file and override body/body_size */
+    if (ctx->local_file_path != NULL) {
+        struct stat file_stat;
+        int fd;
+        void *mapped;
+        flb_plg_info(ctx->ins, "Starting local file upload: %s",  ctx->local_file_path);
+        /* Validate file exists and is accessible */
+        if (access(ctx->local_file_path, F_OK) != 0) {
+            flb_plg_error(ctx->ins, "Local file does not exist or is not accessible: %s (errno=%d)", 
+                         ctx->local_file_path, errno);
+            return FLB_ERROR;
+        }
+        
+        if (access(ctx->local_file_path, R_OK) != 0) {
+            flb_plg_error(ctx->ins, "Local file is not readable: %s (errno=%d)", 
+                         ctx->local_file_path, errno);
+            return FLB_ERROR;
+        }
+        
+        /* Verify it's a regular file */
+        if (stat(ctx->local_file_path, &file_stat) != 0) {
+            flb_plg_error(ctx->ins, "Failed to stat local file: %s (errno=%d)", 
+                         ctx->local_file_path, errno);
+            return FLB_ERROR;
+        }
+        
+        if (!S_ISREG(file_stat.st_mode)) {
+            flb_plg_error(ctx->ins, "Local file path is not a regular file: %s", 
+                         ctx->local_file_path);
+            return FLB_ERROR;
+        }
+        
+        /* Read file using mmap */
+        fd = open(ctx->local_file_path, O_RDONLY);
+        if (fd == -1) {
+            flb_plg_error(ctx->ins, "Cannot open local file: %s (errno=%d)", 
+                         ctx->local_file_path, errno);
+            return FLB_ERROR;
+        }
+        
+        mapped = mmap(NULL, file_stat.st_size, PROT_READ, MAP_PRIVATE, fd, 0);
+        if (mapped == MAP_FAILED) {
+            close(fd);
+            flb_plg_error(ctx->ins, "Memory mapping failed for file: %s (errno=%d)", 
+                         ctx->local_file_path, errno);
+            return FLB_ERROR;
+        }
+        
+        /* Allocate buffer and copy file contents */
+        local_file_size = file_stat.st_size;
+        local_file_buffer = flb_malloc(local_file_size);
+        if (!local_file_buffer) {
+            munmap(mapped, file_stat.st_size);
+            close(fd);
+            flb_errno();
+            return FLB_ERROR;
+        }
+        
+        memcpy(local_file_buffer, mapped, local_file_size);
+        
+        munmap(mapped, file_stat.st_size);
+        close(fd);
+        
+        flb_plg_info(ctx->ins, "Successfully read local file: %s (%zu bytes)", 
+                    ctx->local_file_path, local_file_size);
+        
+        if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
+            /* Map payload */
+            ret = flb_aws_compression_compress(ctx->compression, local_file_buffer, local_file_size, &payload_buf, &payload_size);
+            if (ret == -1) {
+                flb_plg_error(ctx->ins, "Failed to compress data");
+                if (local_file_buffer) {
+                    flb_free(local_file_buffer);
+                }
+                if (chunk != NULL) {
+                    s3_store_file_unlock(chunk);
+                    chunk->failures += 1;
+                }
+                return FLB_RETRY;
+            }
+            else {
+                preCompress_size = local_file_size;
+                local_file_buffer = (void *) payload_buf;
+                local_file_size = payload_size;
+            }
+        }
+        flb_plg_info(ctx->ins, "performing upload with local file because local file path is not null: %s", ctx->local_file_path);
+
+        /* Override body and body_size with local file data */
+        ret = s3_put_object(ctx, tag, file_first_log_time, local_file_buffer, local_file_size);
+    } else {
+        flb_plg_info(ctx->ins, "performing upload without local file because local file path is null: %s", ctx->local_file_path);
+        ret = s3_put_object(ctx, tag, file_first_log_time, body, body_size);
+    }
+
+
     if (ctx->compression != FLB_AWS_COMPRESS_NONE) {
         flb_free(payload_buf);
     }
+    // if (local_file_buffer) {
+    //     flb_free(local_file_buffer);
+    // }
     if (ret < 0) {
         /* re-add chunk to list */
         if (chunk) {
@@ -1437,6 +1630,7 @@ static int put_all_chunks(struct flb_s3 *ctx)
                     buffer_size = payload_size;
                 }
             }
+            flb_plg_info(ctx->ins, "performing upload without local file because I am inside put_all_chunks: %s", ctx->local_file_path);
 
             ret = s3_put_object(ctx, (const char *)
                                 fsf->meta_buf,
@@ -1502,7 +1696,7 @@ static int construct_request_buffer(struct flb_s3 *ctx, flb_sds_t new_data,
         tmp = flb_realloc(buffered_data, body_size + 1);
         if (!tmp) {
             flb_errno();
-            flb_free(buffered_data);
+                flb_free(buffered_data);
             if (chunk) {
                 s3_store_file_unlock(chunk);
             }
@@ -2580,7 +2774,7 @@ static int put_blob_object(struct flb_s3 *ctx,
              * to print the object key
              */
             final_key = uri + strlen(ctx->bucket) + 1;
-            flb_plg_info(ctx->ins, "Successfully uploaded object %s", final_key);
+            flb_plg_info(ctx->ins, "Successfully uploaded object from blob %s", final_key);
             flb_sds_destroy(uri);
             flb_http_client_destroy(c);
 
@@ -3665,7 +3859,7 @@ static int process_blob_chunk(struct flb_s3 *ctx, struct flb_event_chunk *event_
 
     if (ctx->blob_db.db == NULL) {
         flb_plg_error(ctx->ins, "Cannot process blob because this operation requires a database.");
-
+        
         return -1;
     }
 
@@ -3826,7 +4020,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
             flb_plg_error(ctx->ins,
                           "Log event decoder initialization error : %d", ret);
 
-            flb_sds_destroy(chunk);
+                flb_sds_destroy(chunk);
 
             FLB_OUTPUT_RETURN(FLB_ERROR);
         }
@@ -3889,7 +4083,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
         (m_upload_file && m_upload_file->bytes + chunk_size > ctx->file_size)) {
         total_file_size_check = FLB_TRUE;
     }
-
+    
     /* File is ready for upload, upload_file != NULL prevents from segfaulting. */
     if ((upload_file != NULL) && (upload_timeout_check == FLB_TRUE || total_file_size_check == FLB_TRUE)) {
         if (ctx->preserve_data_ordering == FLB_TRUE) {
@@ -3899,6 +4093,7 @@ static void cb_s3_flush(struct flb_event_chunk *event_chunk,
                                file_first_log_time);
 
             if (ret < 0) {
+                /* buffer_chunk already destroyed chunk, just return */
                 FLB_OUTPUT_RETURN(FLB_RETRY);
             }
             s3_store_file_lock(upload_file);
@@ -4263,6 +4458,11 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_STR, "authorization_endpoint_bearer_token", NULL,
      0, FLB_TRUE, offsetof(struct flb_s3, authorization_endpoint_bearer_token),
      "Authorization endpoint bearer token"
+    },
+    {
+     FLB_CONFIG_MAP_STR, "local_file_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_s3, local_file_path),
+     "Path to local file to upload instead of processing log records"
     },
 
     /* EOF */
