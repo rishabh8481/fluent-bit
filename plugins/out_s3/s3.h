@@ -117,6 +117,7 @@ struct flb_s3 {
     char *external_id;
     char *profile;
     char *credentials_uri;
+    char *local_file_path;
     int free_endpoint;
     int retry_requests;
     int use_put_object;
